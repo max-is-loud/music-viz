@@ -1,13 +1,15 @@
 import AppKit
+import SwiftUI
 
 @MainActor
 public final class MainWindowController: NSWindowController {
     private let appState: AppState
     private let audioSource: AudioInputSource
+    private var keyMonitor: LocalKeyMonitor?
 
     public convenience init(appState: AppState, audioSource: AudioInputSource) {
         self.init(appState: appState, audioSource: audioSource) {
-            try MetalCanvasView(appState: appState, audioSource: audioSource)
+            NSHostingView(rootView: AppRootOverlay(appState: appState, audioSource: audioSource))
         }
     }
 
@@ -35,6 +37,8 @@ public final class MainWindowController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = false
         super.init(window: window)
+
+        keyMonitor = LocalKeyMonitor(appState: appState)
     }
 
     @available(*, unavailable)
@@ -47,7 +51,7 @@ public final class MainWindowController: NSWindowController {
         window?.makeKeyAndOrderFront(sender)
     }
 
-    private static func makeFallbackView(statusText: String) -> NSView {
+    fileprivate static func makeFallbackView(statusText: String) -> NSView {
         let container = NSView(frame: .zero)
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor(
@@ -71,4 +75,64 @@ public final class MainWindowController: NSWindowController {
 
         return container
     }
+}
+
+private final class LocalKeyMonitor {
+    private let monitor: Any?
+
+    @MainActor
+    init(appState: AppState) {
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak appState] event in
+            if event.charactersIgnoringModifiers == "l" {
+                appState?.isLabVisible.toggle()
+                return nil
+            }
+            if event.charactersIgnoringModifiers == " " {
+                appState?.isPaused.toggle()
+                return nil
+            }
+            return event
+        }
+    }
+
+    deinit {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+}
+
+private struct AppRootOverlay: View {
+    @ObservedObject var appState: AppState
+    let audioSource: AudioInputSource
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            RootView(appState: appState, audioSource: audioSource)
+                .ignoresSafeArea()
+
+            if appState.isLabVisible {
+                LabPanelView(appState: appState)
+                    .padding(20)
+            }
+        }
+    }
+}
+
+private struct RootView: NSViewControllerRepresentable {
+    let appState: AppState
+    let audioSource: AudioInputSource
+
+    func makeNSViewController(context: Context) -> NSViewController {
+        let viewController = NSViewController()
+        do {
+            viewController.view = try MetalCanvasView(appState: appState, audioSource: audioSource)
+        } catch {
+            appState.statusText = error.localizedDescription
+            viewController.view = MainWindowController.makeFallbackView(statusText: appState.statusText)
+        }
+        return viewController
+    }
+
+    func updateNSViewController(_ nsViewController: NSViewController, context: Context) {}
 }
