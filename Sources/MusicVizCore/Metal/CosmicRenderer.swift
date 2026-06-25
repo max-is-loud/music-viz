@@ -7,7 +7,9 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let particleState: MetalParticleState
+    private var fieldState: MetalFieldState
     private let particlePipeline: MTLRenderPipelineState
+    private var decayFieldsPipeline: MTLComputePipelineState
     private var time: Float = 0
     private var lastDrawTime = Date().timeIntervalSinceReferenceDate
 
@@ -22,7 +24,12 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
             device: device,
             particles: ParticleSeed.generate(count: 250_000, seed: 1)
         )
+        let fieldState = MetalFieldState(device: device, resolution: 512)
         let library = try ShaderLibrary.makeLibrary(device: device)
+        guard let decayFunction = library.makeFunction(name: "decay_fields") else {
+            throw RendererError.missingShaderFunction("decay_fields")
+        }
+        let decayFieldsPipeline = try device.makeComputePipelineState(function: decayFunction)
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = library.makeFunction(name: "particle_vertex")
         descriptor.fragmentFunction = library.makeFunction(name: "particle_fragment")
@@ -39,7 +46,9 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
         self.device = device
         self.commandQueue = queue
         self.particleState = particleState
+        self.fieldState = fieldState
         self.particlePipeline = particlePipeline
+        self.decayFieldsPipeline = decayFieldsPipeline
         super.init()
         view.clearColor = MTLClearColor(red: 0.006, green: 0.008, blue: 0.018, alpha: 1)
     }
@@ -65,6 +74,34 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
             alpha: 1
         )
 
+        var params = GPUSimParams(
+            deltaTime: 1.0 / 120.0,
+            timeScale: 1.0,
+            audioInfluence: 1.0,
+            gravityStrength: 1.0,
+            heatDecay: 0.985,
+            turbulenceStrength: 0.35,
+            starIgnitionThreshold: 0.72,
+            collapseThreshold: 0.92,
+            particleCount: UInt32(particleState.count),
+            fieldResolution: UInt32(fieldState.resolution)
+        )
+
+        if let compute = commandBuffer.makeComputeCommandEncoder() {
+            compute.setComputePipelineState(decayFieldsPipeline)
+            compute.setTexture(fieldState.density, index: 0)
+            compute.setTexture(fieldState.heat, index: 1)
+            compute.setBytes(&params, length: MemoryLayout<GPUSimParams>.stride, index: 0)
+            let threads = MTLSize(width: 16, height: 16, depth: 1)
+            let groups = MTLSize(
+                width: (fieldState.resolution + 15) / 16,
+                height: (fieldState.resolution + 15) / 16,
+                depth: 1
+            )
+            compute.dispatchThreadgroups(groups, threadsPerThreadgroup: threads)
+            compute.endEncoding()
+        }
+
         if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) {
             encoder.setRenderPipelineState(particlePipeline)
             encoder.setVertexBuffer(particleState.buffer, offset: 0, index: 0)
@@ -79,6 +116,7 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
 public enum RendererError: LocalizedError {
     case missingDevice
     case missingCommandQueue
+    case missingShaderFunction(String)
 
     public var errorDescription: String? {
         switch self {
@@ -86,6 +124,21 @@ public enum RendererError: LocalizedError {
             return "Metal device is unavailable."
         case .missingCommandQueue:
             return "Metal command queue could not be created."
+        case .missingShaderFunction(let name):
+            return "Metal shader function '\(name)' was not found."
         }
     }
+}
+
+private struct GPUSimParams {
+    var deltaTime: Float
+    var timeScale: Float
+    var audioInfluence: Float
+    var gravityStrength: Float
+    var heatDecay: Float
+    var turbulenceStrength: Float
+    var starIgnitionThreshold: Float
+    var collapseThreshold: Float
+    var particleCount: UInt32
+    var fieldResolution: UInt32
 }

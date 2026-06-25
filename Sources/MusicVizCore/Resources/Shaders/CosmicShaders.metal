@@ -41,3 +41,32 @@ vertex VertexOut particle_vertex(
 fragment float4 particle_fragment(VertexOut in [[stage_in]]) {
     return in.color;
 }
+
+struct SimParams {
+    float deltaTime;
+    float timeScale;
+    float audioInfluence;
+    float gravityStrength;
+    float heatDecay;
+    float turbulenceStrength;
+    float starIgnitionThreshold;
+    float collapseThreshold;
+    uint particleCount;
+    uint fieldResolution;
+};
+
+kernel void decay_fields(
+    texture2d<half, access::read_write> density [[texture(0)]],
+    texture2d<half, access::read_write> heat [[texture(1)]],
+    constant SimParams &params [[buffer(0)]],
+    uint2 gid [[thread_position_in_grid]]
+) {
+    if (gid.x >= params.fieldResolution || gid.y >= params.fieldResolution) {
+        return;
+    }
+
+    half4 d = density.read(gid);
+    half4 h = heat.read(gid);
+    density.write(d * half4(0.992), gid);
+    heat.write(h * half4(params.heatDecay), gid);
+}

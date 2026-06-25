@@ -49,6 +49,16 @@ final class ShaderLibraryTests: XCTestCase {
         XCTAssertNotNil(library.makeFunction(name: "particle_fragment"))
     }
 
+    func testShaderLibraryLoadsDecayFieldsFunctionWhenMetalDeviceIsAvailable() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw XCTSkip("Metal device is unavailable.")
+        }
+
+        let library = try ShaderLibrary.makeLibrary(device: device)
+
+        XCTAssertNotNil(library.makeFunction(name: "decay_fields"))
+    }
+
     private func makeTemporaryAppBundle(withShaderSource source: String?) throws -> Bundle {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
