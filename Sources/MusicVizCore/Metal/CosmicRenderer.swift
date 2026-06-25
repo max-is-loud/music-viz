@@ -6,6 +6,8 @@ import MetalKit
 public final class CosmicRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
+    private let particleState: MetalParticleState
+    private let particlePipeline: MTLRenderPipelineState
     private var time: Float = 0
     private var lastDrawTime = Date().timeIntervalSinceReferenceDate
 
@@ -16,8 +18,28 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
         guard let queue = device.makeCommandQueue() else {
             throw RendererError.missingCommandQueue
         }
+        let particleState = MetalParticleState(
+            device: device,
+            particles: ParticleSeed.generate(count: 250_000, seed: 1)
+        )
+        let library = try ShaderLibrary.makeLibrary(device: device)
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = library.makeFunction(name: "particle_vertex")
+        descriptor.fragmentFunction = library.makeFunction(name: "particle_fragment")
+        descriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
+        descriptor.colorAttachments[0].isBlendingEnabled = true
+        descriptor.colorAttachments[0].rgbBlendOperation = .add
+        descriptor.colorAttachments[0].alphaBlendOperation = .add
+        descriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        descriptor.colorAttachments[0].destinationRGBBlendFactor = .one
+        descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
+        descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        let particlePipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+
         self.device = device
         self.commandQueue = queue
+        self.particleState = particleState
+        self.particlePipeline = particlePipeline
         super.init()
         view.clearColor = MTLClearColor(red: 0.006, green: 0.008, blue: 0.018, alpha: 1)
     }
@@ -44,6 +66,9 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
         )
 
         if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) {
+            encoder.setRenderPipelineState(particlePipeline)
+            encoder.setVertexBuffer(particleState.buffer, offset: 0, index: 0)
+            encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: particleState.count)
             encoder.endEncoding()
         }
         commandBuffer.present(drawable)
