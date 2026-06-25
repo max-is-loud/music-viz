@@ -42,6 +42,42 @@ fragment float4 particle_fragment(VertexOut in [[stage_in]]) {
     return in.color;
 }
 
+struct FieldDepositVertexOut {
+    float4 position [[position]];
+    float pointSize [[point_size]];
+    float mass;
+    float temperature;
+};
+
+vertex FieldDepositVertexOut field_deposit_vertex(
+    uint vertexID [[vertex_id]],
+    const device SeedParticle *particles [[buffer(0)]]
+) {
+    SeedParticle p = particles[vertexID];
+
+    FieldDepositVertexOut out;
+    out.position = float4(p.x, p.y, 0.0, 1.0);
+    out.pointSize = 1.0;
+    out.mass = p.mass;
+    out.temperature = p.temperature;
+    return out;
+}
+
+struct FieldDepositOut {
+    half4 density [[color(0)]];
+    half4 heat [[color(1)]];
+};
+
+fragment FieldDepositOut field_deposit_fragment(FieldDepositVertexOut in [[stage_in]]) {
+    float massDeposit = clamp(in.mass * 0.0008, 0.0, 0.02);
+    float heatDeposit = clamp(in.temperature * 0.002, 0.0, 0.03);
+
+    FieldDepositOut out;
+    out.density = half4(massDeposit, 0.0, 0.0, 1.0);
+    out.heat = half4(heatDeposit, heatDeposit * 0.35, 0.0, 1.0);
+    return out;
+}
+
 struct SimParams {
     float deltaTime;
     float timeScale;
@@ -74,8 +110,6 @@ kernel void decay_fields(
 kernel void integrate_particles(
     device SeedParticle *particles [[buffer(0)]],
     constant SimParams &params [[buffer(1)]],
-    texture2d<half, access::read_write> density [[texture(0)]],
-    texture2d<half, access::read_write> heat [[texture(1)]],
     uint id [[thread_position_in_grid]]
 ) {
     if (id >= params.particleCount) {
@@ -84,15 +118,6 @@ kernel void integrate_particles(
 
     SeedParticle p = particles[id];
     float2 pos = float2(p.x, p.y);
-    float2 uv = clamp(pos * 0.5 + 0.5, 0.0, 0.999);
-    uint2 cell = uint2(uv * float(params.fieldResolution));
-
-    half4 oldDensity = density.read(cell);
-    half4 oldHeat = heat.read(cell);
-    float massDeposit = clamp(p.mass * 0.0008, 0.0, 0.02);
-    float heatDeposit = clamp(p.temperature * 0.002, 0.0, 0.03);
-    density.write(oldDensity + half4(massDeposit, 0.0, 0.0, 1.0), cell);
-    heat.write(oldHeat + half4(heatDeposit, heatDeposit * 0.35, 0.0, 1.0), cell);
 
     float centerPull = 0.004 * params.gravityStrength;
     float2 acceleration = -pos * centerPull;

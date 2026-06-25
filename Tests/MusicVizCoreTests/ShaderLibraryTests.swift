@@ -69,6 +69,17 @@ final class ShaderLibraryTests: XCTestCase {
         XCTAssertNotNil(library.makeFunction(name: "integrate_particles"))
     }
 
+    func testShaderLibraryLoadsFieldDepositFunctionsWhenMetalDeviceIsAvailable() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw XCTSkip("Metal device is unavailable.")
+        }
+
+        let library = try ShaderLibrary.makeLibrary(device: device)
+
+        XCTAssertNotNil(library.makeFunction(name: "field_deposit_vertex"))
+        XCTAssertNotNil(library.makeFunction(name: "field_deposit_fragment"))
+    }
+
     private func makeTemporaryAppBundle(withShaderSource source: String?) throws -> Bundle {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

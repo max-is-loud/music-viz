@@ -9,6 +9,7 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
     private let particleState: MetalParticleState
     private var fieldState: MetalFieldState
     private let particlePipeline: MTLRenderPipelineState
+    private let fieldDepositPipeline: MTLRenderPipelineState
     private var decayFieldsPipeline: MTLComputePipelineState
     private let integrateParticlesPipeline: MTLComputePipelineState
     private var needsFieldClear = true
@@ -36,24 +37,33 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
             throw RendererError.missingShaderFunction("integrate_particles")
         }
         let integrateParticlesPipeline = try device.makeComputePipelineState(function: integrateFunction)
+        guard let fieldDepositVertex = library.makeFunction(name: "field_deposit_vertex") else {
+            throw RendererError.missingShaderFunction("field_deposit_vertex")
+        }
+        guard let fieldDepositFragment = library.makeFunction(name: "field_deposit_fragment") else {
+            throw RendererError.missingShaderFunction("field_deposit_fragment")
+        }
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = library.makeFunction(name: "particle_vertex")
         descriptor.fragmentFunction = library.makeFunction(name: "particle_fragment")
         descriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
-        descriptor.colorAttachments[0].isBlendingEnabled = true
-        descriptor.colorAttachments[0].rgbBlendOperation = .add
-        descriptor.colorAttachments[0].alphaBlendOperation = .add
-        descriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
-        descriptor.colorAttachments[0].destinationRGBBlendFactor = .one
-        descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
-        descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        Self.configureParticleBlending(descriptor.colorAttachments[0])
         let particlePipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+        let fieldDepositDescriptor = MTLRenderPipelineDescriptor()
+        fieldDepositDescriptor.vertexFunction = fieldDepositVertex
+        fieldDepositDescriptor.fragmentFunction = fieldDepositFragment
+        fieldDepositDescriptor.colorAttachments[0].pixelFormat = fieldState.density.pixelFormat
+        fieldDepositDescriptor.colorAttachments[1].pixelFormat = fieldState.heat.pixelFormat
+        Self.configureAdditiveBlending(fieldDepositDescriptor.colorAttachments[0])
+        Self.configureAdditiveBlending(fieldDepositDescriptor.colorAttachments[1])
+        let fieldDepositPipeline = try device.makeRenderPipelineState(descriptor: fieldDepositDescriptor)
 
         self.device = device
         self.commandQueue = queue
         self.particleState = particleState
         self.fieldState = fieldState
         self.particlePipeline = particlePipeline
+        self.fieldDepositPipeline = fieldDepositPipeline
         self.decayFieldsPipeline = decayFieldsPipeline
         self.integrateParticlesPipeline = integrateParticlesPipeline
         super.init()
@@ -113,19 +123,26 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
             compute.endEncoding()
         }
 
-        if let compute = commandBuffer.makeComputeCommandEncoder() {
+        if particleState.count > 0, let compute = commandBuffer.makeComputeCommandEncoder() {
             compute.setComputePipelineState(integrateParticlesPipeline)
             compute.setBuffer(particleState.buffer, offset: 0, index: 0)
             compute.setBytes(&params, length: MemoryLayout<GPUSimParams>.stride, index: 1)
-            compute.setTexture(fieldState.density, index: 0)
-            compute.setTexture(fieldState.heat, index: 1)
             let threads = MTLSize(width: 256, height: 1, depth: 1)
             let groups = MTLSize(width: (particleState.count + 255) / 256, height: 1, depth: 1)
             compute.dispatchThreadgroups(groups, threadsPerThreadgroup: threads)
             compute.endEncoding()
         }
 
-        if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) {
+        if particleState.count > 0, let encoder = commandBuffer.makeRenderCommandEncoder(
+            descriptor: fieldDepositRenderPassDescriptor()
+        ) {
+            encoder.setRenderPipelineState(fieldDepositPipeline)
+            encoder.setVertexBuffer(particleState.buffer, offset: 0, index: 0)
+            encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: particleState.count)
+            encoder.endEncoding()
+        }
+
+        if particleState.count > 0, let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) {
             encoder.setRenderPipelineState(particlePipeline)
             encoder.setVertexBuffer(particleState.buffer, offset: 0, index: 0)
             encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: particleState.count)
@@ -133,6 +150,46 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
         }
         commandBuffer.present(drawable)
         commandBuffer.commit()
+    }
+
+    private func fieldDepositRenderPassDescriptor() -> MTLRenderPassDescriptor {
+        let descriptor = MTLRenderPassDescriptor()
+        configureFieldDepositAttachment(descriptor.colorAttachments[0], texture: fieldState.density)
+        configureFieldDepositAttachment(descriptor.colorAttachments[1], texture: fieldState.heat)
+        return descriptor
+    }
+
+    private func configureFieldDepositAttachment(
+        _ attachment: MTLRenderPassColorAttachmentDescriptor,
+        texture: MTLTexture
+    ) {
+        attachment.texture = texture
+        attachment.loadAction = .load
+        attachment.storeAction = .store
+    }
+
+    private static func configureParticleBlending(
+        _ attachment: MTLRenderPipelineColorAttachmentDescriptor
+    ) {
+        attachment.isBlendingEnabled = true
+        attachment.rgbBlendOperation = .add
+        attachment.alphaBlendOperation = .add
+        attachment.sourceRGBBlendFactor = .sourceAlpha
+        attachment.destinationRGBBlendFactor = .one
+        attachment.sourceAlphaBlendFactor = .one
+        attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+    }
+
+    private static func configureAdditiveBlending(
+        _ attachment: MTLRenderPipelineColorAttachmentDescriptor
+    ) {
+        attachment.isBlendingEnabled = true
+        attachment.rgbBlendOperation = .add
+        attachment.alphaBlendOperation = .add
+        attachment.sourceRGBBlendFactor = .one
+        attachment.destinationRGBBlendFactor = .one
+        attachment.sourceAlphaBlendFactor = .one
+        attachment.destinationAlphaBlendFactor = .one
     }
 }
 
