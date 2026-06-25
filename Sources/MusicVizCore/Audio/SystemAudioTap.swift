@@ -204,22 +204,7 @@ public final class SystemAudioTap: AudioInputSource {
     }
 
     private func cleanup() {
-        if let ioProcID, aggregateID != kAudioObjectUnknown {
-            _ = AudioDeviceStop(aggregateID, ioProcID)
-            _ = AudioDeviceDestroyIOProcID(aggregateID, ioProcID)
-            self.ioProcID = nil
-        }
-
-        if aggregateID != kAudioObjectUnknown {
-            _ = AudioHardwareDestroyAggregateDevice(aggregateID)
-            aggregateID = AudioObjectID(kAudioObjectUnknown)
-        }
-
-        if tapID != kAudioObjectUnknown {
-            _ = AudioHardwareDestroyProcessTap(tapID)
-            tapID = AudioObjectID(kAudioObjectUnknown)
-        }
-
+        takeCoreAudioResources().cleanup()
         resetAnalysisState(sampleRate: 48_000)
         isRunning = false
     }
@@ -232,6 +217,8 @@ public final class SystemAudioTap: AudioInputSource {
         ) {
         case .inline:
             stopNow()
+        case .deferredCoreAudioCleanup:
+            stopByDeferringCoreAudioCleanup()
         case .asyncOnControlQueue:
             controlQueue.async { [self] in
                 stopNow()
@@ -254,6 +241,30 @@ public final class SystemAudioTap: AudioInputSource {
             statusText: "System audio stopped",
             isUsingFallback: false
         )
+    }
+
+    private func stopByDeferringCoreAudioCleanup() {
+        let resources = takeCoreAudioResources()
+        resetAnalysisState(sampleRate: 48_000)
+        isRunning = false
+        updateState(
+            features: .silence,
+            statusText: "System audio stopped",
+            isUsingFallback: false
+        )
+        SystemAudioTapCoreAudioCleanupQueue.cleanup(resources)
+    }
+
+    private func takeCoreAudioResources() -> SystemAudioTapCoreAudioResources {
+        let resources = SystemAudioTapCoreAudioResources(
+            tapID: tapID,
+            aggregateID: aggregateID,
+            ioProcID: ioProcID
+        )
+        tapID = AudioObjectID(kAudioObjectUnknown)
+        aggregateID = AudioObjectID(kAudioObjectUnknown)
+        ioProcID = nil
+        return resources
     }
 
     private func updateState(
@@ -345,6 +356,7 @@ extension SystemAudioTapControlQueue: @unchecked Sendable {}
 
 enum SystemAudioTapStopRoute: Equatable {
     case inline
+    case deferredCoreAudioCleanup
     case asyncOnControlQueue
     case syncOnControlQueue
 }
@@ -356,6 +368,9 @@ enum SystemAudioTapStopRouter {
         analysisQueue: SystemAudioTapDispatchQueue
     ) -> SystemAudioTapStopRoute {
         if isDeinitializing {
+            if ioProcQueue.isCurrent {
+                return .deferredCoreAudioCleanup
+            }
             return .inline
         }
 
@@ -368,6 +383,39 @@ enum SystemAudioTapStopRouter {
         }
 
         return .syncOnControlQueue
+    }
+}
+
+struct SystemAudioTapCoreAudioResources {
+    var tapID: AudioObjectID
+    var aggregateID: AudioObjectID
+    var ioProcID: AudioDeviceIOProcID?
+
+    func cleanup() {
+        if let ioProcID, aggregateID != kAudioObjectUnknown {
+            _ = AudioDeviceStop(aggregateID, ioProcID)
+            _ = AudioDeviceDestroyIOProcID(aggregateID, ioProcID)
+        }
+
+        if aggregateID != kAudioObjectUnknown {
+            _ = AudioHardwareDestroyAggregateDevice(aggregateID)
+        }
+
+        if tapID != kAudioObjectUnknown {
+            _ = AudioHardwareDestroyProcessTap(tapID)
+        }
+    }
+}
+
+extension SystemAudioTapCoreAudioResources: @unchecked Sendable {}
+
+enum SystemAudioTapCoreAudioCleanupQueue {
+    private static let queue = DispatchQueue(label: "MusicVizCore.SystemAudioTap.CoreAudioCleanup")
+
+    static func cleanup(_ resources: SystemAudioTapCoreAudioResources) {
+        queue.async {
+            resources.cleanup()
+        }
     }
 }
 
