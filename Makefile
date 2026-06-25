@@ -4,6 +4,7 @@ CONFIG ?= debug
 EXECUTABLE := .build/$(CONFIG)/MusicViz
 APP := .build/MusicViz.app
 RESOURCE_BUNDLE := .build/$(CONFIG)/MusicViz_MusicVizCore.bundle
+APP_RESOURCE_BUNDLE := $(APP)/Contents/Resources/MusicViz_MusicVizCore.bundle
 
 build:
 	swift build -c $(CONFIG)
@@ -18,6 +19,7 @@ app: build
 	cp $(EXECUTABLE) $(APP)/Contents/MacOS/MusicViz
 	cp Resources/AppBundle/Info.plist $(APP)/Contents/Info.plist
 	if [ -d "$(RESOURCE_BUNDLE)" ]; then cp -R "$(RESOURCE_BUNDLE)" "$(APP)/Contents/Resources/"; fi
+	test -f "$(APP_RESOURCE_BUNDLE)/CosmicShaders.metal"
 	codesign --force --deep --sign - $(APP)
 	codesign --verify --deep --strict --verbose=2 $(APP)
 
