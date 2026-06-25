@@ -140,26 +140,25 @@ kernel void integrate_particles(
     float2 uv = clamp(float2(p.x, p.y) * 0.5 + 0.5, 0.0, 1.0);
     uint2 cell = min(uint2(uv * float(resolution)), uint2(lastCell));
     float localDensity = float(density.read(cell).r);
+    uint originalKind = p.kind;
 
-    if ((p.kind == 0 || p.kind == 1) &&
+    if ((originalKind == 0 || originalKind == 1) &&
         localDensity >= params.starIgnitionThreshold &&
         p.temperature >= 0.55 &&
         p.mass >= 1.2) {
         p.kind = 2;
     }
 
-    if (p.kind == 2 && p.temperature >= 0.9 && p.age >= 8.0) {
+    if (originalKind == 2 && p.temperature >= 0.9 && p.age >= 8.0) {
         p.kind = 3;
     }
 
-    if (p.kind == 3 && p.temperature >= 2.0 && p.mass >= 2.8 && p.age >= 40.0) {
+    if (originalKind == 3 && p.temperature >= 2.0 && p.mass >= 2.8 && p.age >= 40.0) {
         p.kind = 4;
     }
 
-    if (p.kind == 4 && (localDensity >= params.collapseThreshold || p.temperature >= 2.4)) {
+    if (originalKind == 4 && (localDensity >= params.collapseThreshold || p.temperature >= 2.4)) {
         p.kind = 5;
-        p.mass *= 1.25;
-        p.temperature = 0.65;
     }
 
     if (length(float2(p.x, p.y)) > 1.08) {

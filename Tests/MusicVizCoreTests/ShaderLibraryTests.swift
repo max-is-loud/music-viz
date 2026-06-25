@@ -80,6 +80,18 @@ final class ShaderLibraryTests: XCTestCase {
         XCTAssertNotNil(library.makeFunction(name: "field_deposit_fragment"))
     }
 
+    func testIntegrateParticlesLifecycleUsesOriginalKindWithoutCollapseSideEffects() throws {
+        let source = try String(contentsOf: ShaderLibrary.shaderSourceURL(), encoding: .utf8)
+
+        XCTAssertTrue(source.contains("uint originalKind = p.kind;"))
+        XCTAssertTrue(source.contains("if ((originalKind == 0 || originalKind == 1) &&"))
+        XCTAssertTrue(source.contains("if (originalKind == 2 && p.temperature >= 0.9 && p.age >= 8.0)"))
+        XCTAssertTrue(source.contains("if (originalKind == 3 && p.temperature >= 2.0 && p.mass >= 2.8 && p.age >= 40.0)"))
+        XCTAssertTrue(source.contains("if (originalKind == 4 &&"))
+        XCTAssertFalse(source.contains("p.mass *= 1.25"))
+        XCTAssertFalse(source.contains("p.temperature = 0.65"))
+    }
+
     private func makeTemporaryAppBundle(withShaderSource source: String?) throws -> Bundle {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
