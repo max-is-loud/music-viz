@@ -8,7 +8,7 @@ public final class SystemAudioTap: AudioInputSource {
 
     private let controlQueue = SystemAudioTapControlQueue(label: "MusicVizCore.SystemAudioTap.Control")
     private let ioProcQueue = SystemAudioTapDispatchQueue(label: "MusicVizCore.SystemAudioTap.IOProc")
-    private let analysisQueue = DispatchQueue(label: "MusicVizCore.SystemAudioTap.Analysis")
+    private let analysisQueue = SystemAudioTapDispatchQueue(label: "MusicVizCore.SystemAudioTap.Analysis")
     private let stateLock = NSLock()
     private let sampleHandoff = AudioSampleHandoff(capacity: sampleHandoffCapacity)
 
@@ -86,6 +86,11 @@ public final class SystemAudioTap: AudioInputSource {
 
         if ioProcQueue.isCurrent {
             controlQueue.async(stopWork)
+            return
+        }
+
+        if analysisQueue.isCurrent {
+            stopWork()
             return
         }
 
@@ -341,6 +346,13 @@ final class SystemAudioTapDispatchQueue {
 
     func async(_ work: @escaping @Sendable () -> Void) {
         dispatchQueue.async(execute: work)
+    }
+
+    func sync<T>(_ work: () throws -> T) rethrows -> T {
+        if isCurrent {
+            return try work()
+        }
+        return try dispatchQueue.sync(execute: work)
     }
 }
 

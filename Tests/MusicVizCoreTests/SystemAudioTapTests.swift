@@ -41,6 +41,19 @@ final class SystemAudioTapTests: XCTestCase {
         wait(for: [expectation], timeout: 1)
     }
 
+    func testDispatchQueueSyncRunsInlineWhenAlreadyOnQueue() {
+        let queue = SystemAudioTapDispatchQueue(label: "MusicVizCore.SystemAudioTapTests.Sync")
+        let expectation = expectation(description: "nested sync completed")
+
+        queue.async {
+            queue.sync {
+                expectation.fulfill()
+            }
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
     func testSampleHandoffCopiesBoundedFiniteSamples() {
         let handoff = AudioSampleHandoff(capacity: 4)
 
