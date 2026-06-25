@@ -26,7 +26,7 @@ public final class SystemAudioTap: AudioInputSource {
     public init() {}
 
     deinit {
-        stop()
+        stopDuringDeinit()
     }
 
     public var latestFeatures: AudioFeatures {
@@ -75,26 +75,7 @@ public final class SystemAudioTap: AudioInputSource {
     }
 
     public func stop() {
-        let stopWork: @Sendable () -> Void = { [self] in
-            cleanup()
-            updateState(
-                features: .silence,
-                statusText: "System audio stopped",
-                isUsingFallback: false
-            )
-        }
-
-        if ioProcQueue.isCurrent {
-            controlQueue.async(stopWork)
-            return
-        }
-
-        if analysisQueue.isCurrent {
-            stopWork()
-            return
-        }
-
-        controlQueue.sync(stopWork)
+        stop(isDeinitializing: false)
     }
 
     private func createTap() throws -> AudioObjectID {
@@ -243,6 +224,38 @@ public final class SystemAudioTap: AudioInputSource {
         isRunning = false
     }
 
+    private func stop(isDeinitializing: Bool) {
+        switch SystemAudioTapStopRouter.route(
+            isDeinitializing: isDeinitializing,
+            ioProcQueue: ioProcQueue,
+            analysisQueue: analysisQueue
+        ) {
+        case .inline:
+            stopNow()
+        case .asyncOnControlQueue:
+            controlQueue.async { [self] in
+                stopNow()
+            }
+        case .syncOnControlQueue:
+            controlQueue.sync {
+                stopNow()
+            }
+        }
+    }
+
+    private func stopDuringDeinit() {
+        stop(isDeinitializing: true)
+    }
+
+    private func stopNow() {
+        cleanup()
+        updateState(
+            features: .silence,
+            statusText: "System audio stopped",
+            isUsingFallback: false
+        )
+    }
+
     private func updateState(
         features: AudioFeatures? = nil,
         statusText: String? = nil,
@@ -329,6 +342,34 @@ final class SystemAudioTapControlQueue {
 }
 
 extension SystemAudioTapControlQueue: @unchecked Sendable {}
+
+enum SystemAudioTapStopRoute: Equatable {
+    case inline
+    case asyncOnControlQueue
+    case syncOnControlQueue
+}
+
+enum SystemAudioTapStopRouter {
+    static func route(
+        isDeinitializing: Bool,
+        ioProcQueue: SystemAudioTapDispatchQueue,
+        analysisQueue: SystemAudioTapDispatchQueue
+    ) -> SystemAudioTapStopRoute {
+        if isDeinitializing {
+            return .inline
+        }
+
+        if ioProcQueue.isCurrent {
+            return .asyncOnControlQueue
+        }
+
+        if analysisQueue.isCurrent {
+            return .inline
+        }
+
+        return .syncOnControlQueue
+    }
+}
 
 final class SystemAudioTapDispatchQueue {
     let dispatchQueue: DispatchQueue

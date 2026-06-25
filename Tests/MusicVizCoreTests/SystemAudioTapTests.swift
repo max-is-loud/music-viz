@@ -54,6 +54,25 @@ final class SystemAudioTapTests: XCTestCase {
         wait(for: [expectation], timeout: 1)
     }
 
+    func testDeinitStopRouteRunsInlineOnIOProcQueue() {
+        let ioProcQueue = SystemAudioTapDispatchQueue(label: "MusicVizCore.SystemAudioTapTests.IOProc")
+        let analysisQueue = SystemAudioTapDispatchQueue(label: "MusicVizCore.SystemAudioTapTests.Analysis")
+        let expectation = expectation(description: "deinit route checked")
+
+        ioProcQueue.async {
+            let route = SystemAudioTapStopRouter.route(
+                isDeinitializing: true,
+                ioProcQueue: ioProcQueue,
+                analysisQueue: analysisQueue
+            )
+
+            XCTAssertEqual(route, .inline)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
     func testSampleHandoffCopiesBoundedFiniteSamples() {
         let handoff = AudioSampleHandoff(capacity: 4)
 
