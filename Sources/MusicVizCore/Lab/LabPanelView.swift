@@ -29,8 +29,6 @@ public struct LabPanelView: View {
             slider("Turbulence", value: $appState.parameters.turbulenceStrength, range: 0.0...4.0)
             slider("Ignition", value: $appState.parameters.starIgnitionThreshold, range: 0.01...2.0)
             slider("Collapse", value: $appState.parameters.collapseThreshold, range: 0.01...4.0)
-            slider("Render", value: $appState.parameters.renderIntensity, range: 0.0...5.0)
-            slider("Bloom", value: $appState.parameters.bloomStrength, range: 0.0...3.0)
 
             Button("Reset Parameters") {
                 appState.resetToDefaults()
