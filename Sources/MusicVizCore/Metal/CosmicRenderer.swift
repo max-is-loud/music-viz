@@ -10,6 +10,7 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
     private var fieldState: MetalFieldState
     private let particlePipeline: MTLRenderPipelineState
     private var decayFieldsPipeline: MTLComputePipelineState
+    private let integrateParticlesPipeline: MTLComputePipelineState
     private var needsFieldClear = true
     private var time: Float = 0
     private var lastDrawTime = Date().timeIntervalSinceReferenceDate
@@ -31,6 +32,10 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
             throw RendererError.missingShaderFunction("decay_fields")
         }
         let decayFieldsPipeline = try device.makeComputePipelineState(function: decayFunction)
+        guard let integrateFunction = library.makeFunction(name: "integrate_particles") else {
+            throw RendererError.missingShaderFunction("integrate_particles")
+        }
+        let integrateParticlesPipeline = try device.makeComputePipelineState(function: integrateFunction)
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = library.makeFunction(name: "particle_vertex")
         descriptor.fragmentFunction = library.makeFunction(name: "particle_fragment")
@@ -50,6 +55,7 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
         self.fieldState = fieldState
         self.particlePipeline = particlePipeline
         self.decayFieldsPipeline = decayFieldsPipeline
+        self.integrateParticlesPipeline = integrateParticlesPipeline
         super.init()
         view.clearColor = MTLClearColor(red: 0.006, green: 0.008, blue: 0.018, alpha: 1)
     }
@@ -103,6 +109,18 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
                 height: (fieldState.resolution + 15) / 16,
                 depth: 1
             )
+            compute.dispatchThreadgroups(groups, threadsPerThreadgroup: threads)
+            compute.endEncoding()
+        }
+
+        if let compute = commandBuffer.makeComputeCommandEncoder() {
+            compute.setComputePipelineState(integrateParticlesPipeline)
+            compute.setBuffer(particleState.buffer, offset: 0, index: 0)
+            compute.setBytes(&params, length: MemoryLayout<GPUSimParams>.stride, index: 1)
+            compute.setTexture(fieldState.density, index: 0)
+            compute.setTexture(fieldState.heat, index: 1)
+            let threads = MTLSize(width: 256, height: 1, depth: 1)
+            let groups = MTLSize(width: (particleState.count + 255) / 256, height: 1, depth: 1)
             compute.dispatchThreadgroups(groups, threadsPerThreadgroup: threads)
             compute.endEncoding()
         }
