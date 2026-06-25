@@ -2,7 +2,6 @@ import Foundation
 
 public enum AudioForceMapper {
     public static func map(_ features: AudioFeatures, parameters: SimulationParameters) -> AudioInjection {
-        let influence = parameters.audioInfluence
         if features.isSilent {
             return AudioInjection(
                 timeScaleMultiplier: 0.18,
@@ -15,14 +14,33 @@ public enum AudioForceMapper {
             )
         }
 
+        let influence = sanitizedInfluence(parameters.audioInfluence)
+        let overallEnergy = sanitizedFeature(features.overallEnergy)
+        let bass = sanitizedFeature(features.bass)
+        let mid = sanitizedFeature(features.mid)
+        let high = sanitizedFeature(features.high)
+        let transient = sanitizedFeature(features.transient)
+        let brightness = sanitizedFeature(features.brightness)
+        let sustainedIntensity = sanitizedFeature(features.sustainedIntensity)
+
         return AudioInjection(
-            timeScaleMultiplier: 0.65 + features.sustainedIntensity * 1.6,
-            compressionStrength: features.bass * influence,
-            shockwaveStrength: features.bass * features.transient * influence,
-            heatInput: features.sustainedIntensity * influence,
-            turbulenceInput: (features.mid + features.high * 0.6) * influence,
-            radiationInput: (features.high + features.brightness * 0.5) * influence,
-            coolingBias: max(0, 0.08 - features.overallEnergy * 0.08)
+            timeScaleMultiplier: 0.65 + sustainedIntensity * 1.6,
+            compressionStrength: bass * influence,
+            shockwaveStrength: bass * transient * influence,
+            heatInput: sustainedIntensity * influence,
+            turbulenceInput: (mid + high * 0.6) * influence,
+            radiationInput: (high + brightness * 0.5) * influence,
+            coolingBias: max(0, 0.08 - overallEnergy * 0.08)
         )
     }
+}
+
+private func sanitizedFeature(_ value: Float) -> Float {
+    guard value.isFinite else { return 0 }
+    return min(max(value, 0), 1)
+}
+
+private func sanitizedInfluence(_ value: Float) -> Float {
+    guard value.isFinite else { return 0 }
+    return min(max(value, 0), 3)
 }
