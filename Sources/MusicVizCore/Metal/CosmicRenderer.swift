@@ -127,6 +127,7 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
             compute.setComputePipelineState(integrateParticlesPipeline)
             compute.setBuffer(particleState.buffer, offset: 0, index: 0)
             compute.setBytes(&params, length: MemoryLayout<GPUSimParams>.stride, index: 1)
+            compute.setTexture(fieldState.density, index: 0)
             let threads = MTLSize(width: 256, height: 1, depth: 1)
             let groups = MTLSize(width: (particleState.count + 255) / 256, height: 1, depth: 1)
             compute.dispatchThreadgroups(groups, threadsPerThreadgroup: threads)

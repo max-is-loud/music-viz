@@ -110,6 +110,7 @@ kernel void decay_fields(
 kernel void integrate_particles(
     device SeedParticle *particles [[buffer(0)]],
     constant SimParams &params [[buffer(1)]],
+    texture2d<half, access::read> density [[texture(0)]],
     uint id [[thread_position_in_grid]]
 ) {
     if (id >= params.particleCount) {
@@ -133,6 +134,33 @@ kernel void integrate_particles(
     p.y += p.vy * dt * 60.0;
     p.age += dt;
     p.temperature = clamp(p.temperature * 0.999 + length(acceleration) * 0.35, 0.0, 3.0);
+
+    uint resolution = max(params.fieldResolution, 1u);
+    uint lastCell = resolution - 1;
+    float2 uv = clamp(float2(p.x, p.y) * 0.5 + 0.5, 0.0, 1.0);
+    uint2 cell = min(uint2(uv * float(resolution)), uint2(lastCell));
+    float localDensity = float(density.read(cell).r);
+
+    if ((p.kind == 0 || p.kind == 1) &&
+        localDensity >= params.starIgnitionThreshold &&
+        p.temperature >= 0.55 &&
+        p.mass >= 1.2) {
+        p.kind = 2;
+    }
+
+    if (p.kind == 2 && p.temperature >= 0.9 && p.age >= 8.0) {
+        p.kind = 3;
+    }
+
+    if (p.kind == 3 && p.temperature >= 2.0 && p.mass >= 2.8 && p.age >= 40.0) {
+        p.kind = 4;
+    }
+
+    if (p.kind == 4 && (localDensity >= params.collapseThreshold || p.temperature >= 2.4)) {
+        p.kind = 5;
+        p.mass *= 1.25;
+        p.temperature = 0.65;
+    }
 
     if (length(float2(p.x, p.y)) > 1.08) {
         p.x *= -0.86;
