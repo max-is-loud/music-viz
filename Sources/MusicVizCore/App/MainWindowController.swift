@@ -5,12 +5,6 @@ public final class MainWindowController: NSWindowController {
     private let appState: AppState
     private let audioSource: AudioInputSource
 
-    public convenience init(appState: AppState) {
-        let audioSource = AudioSourceFactory.makeDefaultSource()
-        appState.statusText = audioSource.statusText
-        self.init(appState: appState, audioSource: audioSource)
-    }
-
     public convenience init(appState: AppState, audioSource: AudioInputSource) {
         self.init(appState: appState, audioSource: audioSource) {
             try MetalCanvasView(appState: appState, audioSource: audioSource)
@@ -19,7 +13,7 @@ public final class MainWindowController: NSWindowController {
 
     init(
         appState: AppState,
-        audioSource: AudioInputSource = SyntheticAudioSource(),
+        audioSource: AudioInputSource,
         contentViewFactory: () throws -> NSView
     ) {
         self.appState = appState
