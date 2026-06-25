@@ -1,6 +1,8 @@
 import Foundation
 
 public struct AudioAnalyzer: Sendable {
+    private static let sampleMagnitudeLimit: Float = 16
+
     private let sampleRate: Float
     private var previousEnergy: Float = 0
     private var sustained: Float = 0
@@ -24,8 +26,8 @@ public struct AudioAnalyzer: Sendable {
 
         let third = max(1, monoSamples.count / 3)
         for (index, sample) in monoSamples.enumerated() {
-            let finiteSample = sample.isFinite ? sample : 0
-            let square = finiteSample * finiteSample
+            let boundedSample = sanitizedSample(sample)
+            let square = boundedSample * boundedSample
             totalSquares += square
 
             if index < third {
@@ -68,5 +70,10 @@ public struct AudioAnalyzer: Sendable {
     private func bandEnergy(squareSum: Float, count: Int) -> Float {
         guard count > 0 else { return 0 }
         return sqrt(squareSum / Float(count))
+    }
+
+    private func sanitizedSample(_ sample: Float) -> Float {
+        guard sample.isFinite else { return 0 }
+        return min(max(sample, -Self.sampleMagnitudeLimit), Self.sampleMagnitudeLimit)
     }
 }

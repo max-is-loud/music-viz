@@ -45,6 +45,20 @@ final class AudioAnalyzerTests: XCTestCase {
         XCTAssertGreaterThan(later.transient, 0)
     }
 
+    func testHugeFiniteSamplesProduceFiniteFeatures() {
+        var analyzer = AudioAnalyzer(sampleRate: 48_000)
+        let features = analyzer.analyze([
+            Float.greatestFiniteMagnitude,
+            0,
+            Float.greatestFiniteMagnitude
+        ])
+
+        assertFinite(features)
+        XCTAssertFalse(features.isSilent)
+        XCTAssertEqual(features.overallEnergy, 1)
+        XCTAssertEqual(features.brightness, 0.5, accuracy: 0.0001)
+    }
+
     private func assertFinite(
         _ features: AudioFeatures,
         file: StaticString = #filePath,
