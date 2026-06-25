@@ -6,6 +6,7 @@ import MetalKit
 public final class CosmicRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
+    private let appState: AppState
     private let audioSource: AudioInputSource
     private let particleState: MetalParticleState
     private var fieldState: MetalFieldState
@@ -17,7 +18,7 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
     private var time: Float = 0
     private var lastDrawTime = Date().timeIntervalSinceReferenceDate
 
-    public init(view: MTKView, audioSource: AudioInputSource) throws {
+    public init(view: MTKView, appState: AppState, audioSource: AudioInputSource) throws {
         guard let device = view.device else {
             throw RendererError.missingDevice
         }
@@ -62,6 +63,7 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
 
         self.device = device
         self.commandQueue = queue
+        self.appState = appState
         self.audioSource = audioSource
         self.particleState = particleState
         self.fieldState = fieldState
@@ -77,7 +79,10 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
 
     public func draw(in view: MTKView) {
         let currentTime = Date().timeIntervalSinceReferenceDate
-        time += Float(currentTime - lastDrawTime)
+        let controls = RendererSimulationControls(appState: appState)
+        if controls.isPaused == false {
+            time += Float(currentTime - lastDrawTime)
+        }
         lastDrawTime = currentTime
 
         guard let descriptor = view.currentRenderPassDescriptor,
@@ -94,32 +99,19 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
             alpha: 1
         )
 
-        let clampedParameters = SimulationParameters().clamped()
-        let injection = AudioForceMapper.map(audioSource.latestFeatures, parameters: clampedParameters)
-        var params = GPUSimParams(
-            deltaTime: 1.0 / 120.0,
-            timeScale: clampedParameters.timeScale * injection.timeScaleMultiplier,
-            audioInfluence: clampedParameters.audioInfluence,
-            gravityStrength: clampedParameters.gravityStrength,
-            heatDecay: clampedParameters.heatDecay,
-            turbulenceStrength: clampedParameters.turbulenceStrength,
-            starIgnitionThreshold: clampedParameters.starIgnitionThreshold,
-            collapseThreshold: clampedParameters.collapseThreshold,
-            compressionStrength: injection.compressionStrength,
-            shockwaveStrength: injection.shockwaveStrength,
-            heatInput: injection.heatInput,
-            turbulenceInput: injection.turbulenceInput,
-            radiationInput: injection.radiationInput,
-            coolingBias: injection.coolingBias,
-            particleCount: UInt32(particleState.count),
-            fieldResolution: UInt32(fieldState.resolution)
+        var params = GPUSimParams.make(
+            controls: controls,
+            audioFeatures: audioSource.latestFeatures,
+            particleCount: particleState.count,
+            fieldResolution: fieldState.resolution,
+            deltaTime: 1.0 / 120.0
         )
 
         if needsFieldClear {
             needsFieldClear = !fieldState.encodeClear(on: commandBuffer)
         }
 
-        if let compute = commandBuffer.makeComputeCommandEncoder() {
+        if controls.isPaused == false, let compute = commandBuffer.makeComputeCommandEncoder() {
             compute.setComputePipelineState(decayFieldsPipeline)
             compute.setTexture(fieldState.density, index: 0)
             compute.setTexture(fieldState.heat, index: 1)
@@ -134,7 +126,9 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
             compute.endEncoding()
         }
 
-        if particleState.count > 0, let compute = commandBuffer.makeComputeCommandEncoder() {
+        if controls.isPaused == false,
+           particleState.count > 0,
+           let compute = commandBuffer.makeComputeCommandEncoder() {
             compute.setComputePipelineState(integrateParticlesPipeline)
             compute.setBuffer(particleState.buffer, offset: 0, index: 0)
             compute.setBytes(&params, length: MemoryLayout<GPUSimParams>.stride, index: 1)
@@ -145,7 +139,9 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
             compute.endEncoding()
         }
 
-        if particleState.count > 0, let encoder = commandBuffer.makeRenderCommandEncoder(
+        if controls.isPaused == false,
+           particleState.count > 0,
+           let encoder = commandBuffer.makeRenderCommandEncoder(
             descriptor: fieldDepositRenderPassDescriptor()
         ) {
             encoder.setRenderPipelineState(fieldDepositPipeline)
@@ -205,6 +201,17 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
     }
 }
 
+struct RendererSimulationControls: Equatable {
+    var parameters: SimulationParameters
+    var isPaused: Bool
+
+    @MainActor
+    init(appState: AppState) {
+        parameters = appState.parameters.clamped()
+        isPaused = appState.isPaused
+    }
+}
+
 public enum RendererError: LocalizedError {
     case missingDevice
     case missingCommandQueue
@@ -222,7 +229,7 @@ public enum RendererError: LocalizedError {
     }
 }
 
-private struct GPUSimParams {
+struct GPUSimParams {
     var deltaTime: Float
     var timeScale: Float
     var audioInfluence: Float
@@ -239,4 +246,43 @@ private struct GPUSimParams {
     var coolingBias: Float
     var particleCount: UInt32
     var fieldResolution: UInt32
+
+    static func make(
+        controls: RendererSimulationControls,
+        audioFeatures: AudioFeatures,
+        particleCount: Int,
+        fieldResolution: Int,
+        deltaTime: Float
+    ) -> GPUSimParams {
+        let injection = controls.isPaused
+            ? AudioInjection(
+                timeScaleMultiplier: 0,
+                compressionStrength: 0,
+                shockwaveStrength: 0,
+                heatInput: 0,
+                turbulenceInput: 0,
+                radiationInput: 0,
+                coolingBias: 0
+            )
+            : AudioForceMapper.map(audioFeatures, parameters: controls.parameters)
+
+        return GPUSimParams(
+            deltaTime: controls.isPaused ? 0 : deltaTime,
+            timeScale: controls.isPaused ? 0 : controls.parameters.timeScale * injection.timeScaleMultiplier,
+            audioInfluence: controls.parameters.audioInfluence,
+            gravityStrength: controls.parameters.gravityStrength,
+            heatDecay: controls.parameters.heatDecay,
+            turbulenceStrength: controls.parameters.turbulenceStrength,
+            starIgnitionThreshold: controls.parameters.starIgnitionThreshold,
+            collapseThreshold: controls.parameters.collapseThreshold,
+            compressionStrength: injection.compressionStrength,
+            shockwaveStrength: injection.shockwaveStrength,
+            heatInput: injection.heatInput,
+            turbulenceInput: injection.turbulenceInput,
+            radiationInput: injection.radiationInput,
+            coolingBias: injection.coolingBias,
+            particleCount: UInt32(max(0, particleCount)),
+            fieldResolution: UInt32(max(1, fieldResolution))
+        )
+    }
 }

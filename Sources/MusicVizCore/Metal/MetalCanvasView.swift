@@ -18,7 +18,7 @@ public final class MetalCanvasView: MTKView {
         isPaused = false
         autoResizeDrawable = true
 
-        let renderer = try CosmicRenderer(view: self, audioSource: audioSource)
+        let renderer = try CosmicRenderer(view: self, appState: appState, audioSource: audioSource)
         self.cosmicRenderer = renderer
         delegate = renderer
     }

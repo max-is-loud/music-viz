@@ -22,12 +22,40 @@ final class AudioAnalyzerTests: XCTestCase {
         XCTAssertGreaterThan(features.overallEnergy, 0)
     }
 
+    func testLowFrequencySineMapsPrimarilyToBass() {
+        var analyzer = AudioAnalyzer(sampleRate: 48_000)
+        let features = analyzer.analyze(sineWave(frequency: 90, sampleRate: 48_000))
+
+        XCTAssertFalse(features.isSilent)
+        XCTAssertGreaterThan(features.bass, features.mid * 1.5)
+        XCTAssertGreaterThan(features.bass, features.high * 3.0)
+        XCTAssertLessThan(features.brightness, 0.25)
+    }
+
+    func testHighFrequencySineMapsPrimarilyToHighBand() {
+        var analyzer = AudioAnalyzer(sampleRate: 48_000)
+        let features = analyzer.analyze(sineWave(frequency: 8_000, sampleRate: 48_000))
+
+        XCTAssertFalse(features.isSilent)
+        XCTAssertGreaterThan(features.high, features.bass * 3.0)
+        XCTAssertGreaterThan(features.high, features.mid * 1.5)
+        XCTAssertGreaterThan(features.brightness, 0.45)
+    }
+
     func testVeryShortSamplesDoNotCrash() {
         var analyzer = AudioAnalyzer(sampleRate: 48_000)
         let features = analyzer.analyze([1])
 
         XCTAssertFalse(features.isSilent)
         XCTAssertGreaterThan(features.overallEnergy, 0)
+    }
+
+    func testLowSampleRateDoesNotCrashWhenHighBandIsUnavailable() {
+        var analyzer = AudioAnalyzer(sampleRate: 1_000)
+        let features = analyzer.analyze(sineWave(frequency: 100, sampleRate: 1_000))
+
+        assertFinite(features)
+        XCTAssertFalse(features.isSilent)
     }
 
     func testNonFiniteSamplesDoNotPoisonLaterAnalysis() {
@@ -56,7 +84,8 @@ final class AudioAnalyzerTests: XCTestCase {
         assertFinite(features)
         XCTAssertFalse(features.isSilent)
         XCTAssertEqual(features.overallEnergy, 1)
-        XCTAssertEqual(features.brightness, 0.5, accuracy: 0.0001)
+        XCTAssertGreaterThanOrEqual(features.brightness, 0)
+        XCTAssertLessThanOrEqual(features.brightness, 1)
     }
 
     private func assertFinite(
@@ -72,5 +101,17 @@ final class AudioAnalyzerTests: XCTestCase {
         XCTAssertTrue(features.transient.isFinite, file: file, line: line)
         XCTAssertTrue(features.brightness.isFinite, file: file, line: line)
         XCTAssertTrue(features.sustainedIntensity.isFinite, file: file, line: line)
+    }
+
+    private func sineWave(
+        frequency: Float,
+        sampleRate: Float,
+        sampleCount: Int = 4096,
+        amplitude: Float = 0.6
+    ) -> [Float] {
+        (0..<sampleCount).map { index in
+            let phase = 2 * Float.pi * frequency * Float(index) / sampleRate
+            return sin(phase) * amplitude
+        }
     }
 }

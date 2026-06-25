@@ -5,10 +5,18 @@ import SwiftUI
 public final class MainWindowController: NSWindowController {
     private let appState: AppState
     private let audioSource: AudioInputSource
+    private let startsFullScreen: Bool
+    private let fullscreenPresenter: WindowFullscreenPresenting
     private var keyMonitor: LocalKeyMonitor?
+    private var didRequestFullScreen = false
 
     public convenience init(appState: AppState, audioSource: AudioInputSource) {
-        self.init(appState: appState, audioSource: audioSource) {
+        self.init(
+            appState: appState,
+            audioSource: audioSource,
+            startsFullScreen: true,
+            fullscreenPresenter: DefaultWindowFullscreenPresenter()
+        ) {
             NSHostingView(rootView: AppRootOverlay(appState: appState, audioSource: audioSource))
         }
     }
@@ -16,10 +24,14 @@ public final class MainWindowController: NSWindowController {
     init(
         appState: AppState,
         audioSource: AudioInputSource,
+        startsFullScreen: Bool = false,
+        fullscreenPresenter: WindowFullscreenPresenting = DefaultWindowFullscreenPresenter(),
         contentViewFactory: () throws -> NSView
     ) {
         self.appState = appState
         self.audioSource = audioSource
+        self.startsFullScreen = startsFullScreen
+        self.fullscreenPresenter = fullscreenPresenter
         let window = NSWindow(
             contentRect: NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -49,6 +61,10 @@ public final class MainWindowController: NSWindowController {
     public override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         window?.makeKeyAndOrderFront(sender)
+        if startsFullScreen, didRequestFullScreen == false, let window {
+            didRequestFullScreen = true
+            fullscreenPresenter.enterFullScreen(window, sender: sender)
+        }
     }
 
     fileprivate static func makeFallbackView(statusText: String) -> NSView {
@@ -74,6 +90,19 @@ public final class MainWindowController: NSWindowController {
         ])
 
         return container
+    }
+}
+
+@MainActor
+protocol WindowFullscreenPresenting {
+    func enterFullScreen(_ window: NSWindow, sender: Any?)
+}
+
+@MainActor
+private struct DefaultWindowFullscreenPresenter: WindowFullscreenPresenting {
+    func enterFullScreen(_ window: NSWindow, sender: Any?) {
+        guard window.styleMask.contains(.fullScreen) == false else { return }
+        window.toggleFullScreen(sender)
     }
 }
 

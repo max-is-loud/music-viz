@@ -37,6 +37,37 @@ final class MainWindowControllerTests: XCTestCase {
 
         XCTAssertFalse(source.contains("AudioSourceFactory.makeDefaultSource()"))
     }
+
+    func testShowWindowRequestsFullscreenForAmbientPresentation() {
+        let presenter = SpyFullscreenPresenter()
+        let controller = MainWindowController(
+            appState: AppState(),
+            audioSource: InertAudioSource(),
+            startsFullScreen: true,
+            fullscreenPresenter: presenter,
+            contentViewFactory: { NSView() }
+        )
+
+        controller.showWindow(nil)
+
+        XCTAssertEqual(presenter.presentedWindows.count, 1)
+        XCTAssertTrue(presenter.presentedWindows[0] === controller.window)
+    }
+
+    func testShowWindowCanSkipFullscreenForTestsAndFallbacks() {
+        let presenter = SpyFullscreenPresenter()
+        let controller = MainWindowController(
+            appState: AppState(),
+            audioSource: InertAudioSource(),
+            startsFullScreen: false,
+            fullscreenPresenter: presenter,
+            contentViewFactory: { NSView() }
+        )
+
+        controller.showWindow(nil)
+
+        XCTAssertTrue(presenter.presentedWindows.isEmpty)
+    }
 }
 
 private final class InertAudioSource: AudioInputSource {
@@ -47,4 +78,12 @@ private final class InertAudioSource: AudioInputSource {
     var isUsingFallback: Bool { true }
     func start() { didStart = true }
     func stop() {}
+}
+
+private final class SpyFullscreenPresenter: WindowFullscreenPresenting {
+    private(set) var presentedWindows: [NSWindow] = []
+
+    func enterFullScreen(_ window: NSWindow, sender: Any?) {
+        presentedWindows.append(window)
+    }
 }
