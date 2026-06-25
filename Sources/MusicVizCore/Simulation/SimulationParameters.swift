@@ -44,7 +44,7 @@ public struct SimulationParameters: Equatable, Sendable {
             timeScale: timeScale.clamped(to: 0.02...8.0),
             audioInfluence: audioInfluence.clamped(to: 0.0...3.0),
             particleCountTarget: particleCountTarget.clamped(to: 1_024...2_000_000),
-            fieldResolution: nearestPowerOfTwo(fieldResolution).clamped(to: 128...2048),
+            fieldResolution: normalizedFieldResolution(fieldResolution),
             gravityStrength: gravityStrength.clamped(to: 0.0...5.0),
             heatDecay: heatDecay.clamped(to: 0.80...0.999),
             turbulenceStrength: turbulenceStrength.clamped(to: 0.0...4.0),
@@ -54,6 +54,12 @@ public struct SimulationParameters: Equatable, Sendable {
             bloomStrength: bloomStrength.clamped(to: 0.0...3.0)
         )
     }
+}
+
+private func normalizedFieldResolution(_ value: Int) -> Int {
+    if value <= 128 { return 128 }
+    if value >= 2048 { return 2048 }
+    return nearestPowerOfTwo(value)
 }
 
 private func nearestPowerOfTwo(_ value: Int) -> Int {

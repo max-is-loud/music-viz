@@ -31,4 +31,26 @@ final class SimulationParametersTests: XCTestCase {
         XCTAssertEqual(clamped.renderIntensity, 5.0, accuracy: 0.0001)
         XCTAssertEqual(clamped.bloomStrength, 0.0, accuracy: 0.0001)
     }
+
+    func testClampedNormalizesFieldResolutionForAllPublicInputs() {
+        let cases = [
+            (input: 0, expected: 128),
+            (input: 1, expected: 128),
+            (input: 123, expected: 128),
+            (input: 192, expected: 256),
+            (input: 513, expected: 512),
+            (input: 2049, expected: 2048),
+            (input: Int.max, expected: 2048)
+        ]
+
+        for testCase in cases {
+            let clamped = SimulationParameters(fieldResolution: testCase.input).clamped()
+
+            XCTAssertEqual(
+                clamped.fieldResolution,
+                testCase.expected,
+                "fieldResolution \(testCase.input) should normalize to \(testCase.expected)"
+            )
+        }
+    }
 }
