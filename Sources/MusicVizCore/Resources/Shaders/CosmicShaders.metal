@@ -87,6 +87,12 @@ struct SimParams {
     float turbulenceStrength;
     float starIgnitionThreshold;
     float collapseThreshold;
+    float compressionStrength;
+    float shockwaveStrength;
+    float heatInput;
+    float turbulenceInput;
+    float radiationInput;
+    float coolingBias;
     uint particleCount;
     uint fieldResolution;
 };
@@ -122,10 +128,17 @@ kernel void integrate_particles(
 
     float centerPull = 0.004 * params.gravityStrength;
     float2 acceleration = -pos * centerPull;
+    float radial = max(0.05, length(pos));
+    float2 inward = -normalize(pos + float2(0.0001, 0.0001));
+    float shockPhase = sin((radial * 18.0) - (p.age * 4.0));
+    acceleration += inward * params.compressionStrength * 0.002;
+    acceleration += normalize(pos + float2(0.0001, 0.0001)) * shockPhase * params.shockwaveStrength * 0.003;
+    p.temperature = clamp(p.temperature + params.heatInput * 0.0008 - params.coolingBias * 0.0006, 0.0, 3.0);
+    float totalTurbulence = params.turbulenceStrength + params.turbulenceInput;
     acceleration += float2(
         sin((pos.y + p.age) * 19.0),
         cos((pos.x - p.age) * 17.0)
-    ) * params.turbulenceStrength * 0.0004;
+    ) * totalTurbulence * 0.0004;
 
     float dt = params.deltaTime * params.timeScale;
     p.vx += acceleration.x * dt;

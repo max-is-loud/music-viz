@@ -3,15 +3,27 @@ import AppKit
 @MainActor
 public final class MainWindowController: NSWindowController {
     private let appState: AppState
+    private let audioSource: AudioInputSource
 
     public convenience init(appState: AppState) {
-        self.init(appState: appState) {
-            try MetalCanvasView(appState: appState)
+        let audioSource = AudioSourceFactory.makeDefaultSource()
+        appState.statusText = audioSource.statusText
+        self.init(appState: appState, audioSource: audioSource)
+    }
+
+    public convenience init(appState: AppState, audioSource: AudioInputSource) {
+        self.init(appState: appState, audioSource: audioSource) {
+            try MetalCanvasView(appState: appState, audioSource: audioSource)
         }
     }
 
-    init(appState: AppState, contentViewFactory: () throws -> NSView) {
+    init(
+        appState: AppState,
+        audioSource: AudioInputSource = SyntheticAudioSource(),
+        contentViewFactory: () throws -> NSView
+    ) {
         self.appState = appState
+        self.audioSource = audioSource
         let window = NSWindow(
             contentRect: NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],

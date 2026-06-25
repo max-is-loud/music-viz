@@ -6,7 +6,7 @@ import MetalKit
 public final class MetalCanvasView: MTKView {
     private var cosmicRenderer: CosmicRenderer?
 
-    public init(appState: AppState) throws {
+    public init(appState: AppState, audioSource: AudioInputSource) throws {
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw RendererError.missingDevice
         }
@@ -18,7 +18,7 @@ public final class MetalCanvasView: MTKView {
         isPaused = false
         autoResizeDrawable = true
 
-        let renderer = try CosmicRenderer(view: self)
+        let renderer = try CosmicRenderer(view: self, audioSource: audioSource)
         self.cosmicRenderer = renderer
         delegate = renderer
     }

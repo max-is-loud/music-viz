@@ -92,6 +92,37 @@ final class ShaderLibraryTests: XCTestCase {
         XCTAssertFalse(source.contains("p.temperature = 0.65"))
     }
 
+    func testGpuSimParamsLayoutMatchesMetalSimParamsAudioInjectionFields() throws {
+        let swiftSourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/MusicVizCore/Metal/CosmicRenderer.swift")
+        let swiftSource = try String(contentsOf: swiftSourceURL, encoding: .utf8)
+        let metalSource = try String(contentsOf: ShaderLibrary.shaderSourceURL(), encoding: .utf8)
+        let expectedFields = [
+            "deltaTime",
+            "timeScale",
+            "audioInfluence",
+            "gravityStrength",
+            "heatDecay",
+            "turbulenceStrength",
+            "starIgnitionThreshold",
+            "collapseThreshold",
+            "compressionStrength",
+            "shockwaveStrength",
+            "heatInput",
+            "turbulenceInput",
+            "radiationInput",
+            "coolingBias",
+            "particleCount",
+            "fieldResolution"
+        ]
+
+        XCTAssertEqual(fieldNames(inSwiftStruct: "GPUSimParams", source: swiftSource), expectedFields)
+        XCTAssertEqual(fieldNames(inMetalStruct: "SimParams", source: metalSource), expectedFields)
+    }
+
     private func makeTemporaryAppBundle(withShaderSource source: String?) throws -> Bundle {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -114,5 +145,38 @@ final class ShaderLibraryTests: XCTestCase {
             try? FileManager.default.removeItem(at: rootURL)
         }
         return try XCTUnwrap(Bundle(url: appURL))
+    }
+
+    private func fieldNames(inSwiftStruct structName: String, source: String) -> [String] {
+        fieldLines(inStruct: structName, source: source).compactMap { line in
+            guard line.hasPrefix("var ") else { return nil }
+            return line
+                .dropFirst("var ".count)
+                .split(separator: ":", maxSplits: 1)
+                .first
+                .map(String.init)
+        }
+    }
+
+    private func fieldNames(inMetalStruct structName: String, source: String) -> [String] {
+        fieldLines(inStruct: structName, source: source).compactMap { line in
+            guard line.hasSuffix(";") else { return nil }
+            return line
+                .dropLast()
+                .split(separator: " ")
+                .last
+                .map(String.init)
+        }
+    }
+
+    private func fieldLines(inStruct structName: String, source: String) -> [String] {
+        guard let bodyStart = source.range(of: "struct \(structName) {")?.upperBound,
+              let bodyEnd = source[bodyStart...].range(of: "\n}")?.lowerBound else {
+            return []
+        }
+
+        return source[bodyStart..<bodyEnd]
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     }
 }

@@ -6,6 +6,7 @@ import MetalKit
 public final class CosmicRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
+    private let audioSource: AudioInputSource
     private let particleState: MetalParticleState
     private var fieldState: MetalFieldState
     private let particlePipeline: MTLRenderPipelineState
@@ -16,18 +17,19 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
     private var time: Float = 0
     private var lastDrawTime = Date().timeIntervalSinceReferenceDate
 
-    public init(view: MTKView) throws {
+    public init(view: MTKView, audioSource: AudioInputSource) throws {
         guard let device = view.device else {
             throw RendererError.missingDevice
         }
         guard let queue = device.makeCommandQueue() else {
             throw RendererError.missingCommandQueue
         }
+        let clampedParameters = SimulationParameters().clamped()
         let particleState = MetalParticleState(
             device: device,
-            particles: ParticleSeed.generate(count: 250_000, seed: 1)
+            particles: ParticleSeed.generate(count: clampedParameters.particleCountTarget, seed: 1)
         )
-        let fieldState = MetalFieldState(device: device, resolution: 512)
+        let fieldState = MetalFieldState(device: device, resolution: clampedParameters.fieldResolution)
         let library = try ShaderLibrary.makeLibrary(device: device)
         guard let decayFunction = library.makeFunction(name: "decay_fields") else {
             throw RendererError.missingShaderFunction("decay_fields")
@@ -60,6 +62,7 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
 
         self.device = device
         self.commandQueue = queue
+        self.audioSource = audioSource
         self.particleState = particleState
         self.fieldState = fieldState
         self.particlePipeline = particlePipeline
@@ -91,15 +94,23 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
             alpha: 1
         )
 
+        let clampedParameters = SimulationParameters().clamped()
+        let injection = AudioForceMapper.map(audioSource.latestFeatures, parameters: clampedParameters)
         var params = GPUSimParams(
             deltaTime: 1.0 / 120.0,
-            timeScale: 1.0,
-            audioInfluence: 1.0,
-            gravityStrength: 1.0,
-            heatDecay: 0.985,
-            turbulenceStrength: 0.35,
-            starIgnitionThreshold: 0.72,
-            collapseThreshold: 0.92,
+            timeScale: clampedParameters.timeScale * injection.timeScaleMultiplier,
+            audioInfluence: clampedParameters.audioInfluence,
+            gravityStrength: clampedParameters.gravityStrength,
+            heatDecay: clampedParameters.heatDecay,
+            turbulenceStrength: clampedParameters.turbulenceStrength,
+            starIgnitionThreshold: clampedParameters.starIgnitionThreshold,
+            collapseThreshold: clampedParameters.collapseThreshold,
+            compressionStrength: injection.compressionStrength,
+            shockwaveStrength: injection.shockwaveStrength,
+            heatInput: injection.heatInput,
+            turbulenceInput: injection.turbulenceInput,
+            radiationInput: injection.radiationInput,
+            coolingBias: injection.coolingBias,
             particleCount: UInt32(particleState.count),
             fieldResolution: UInt32(fieldState.resolution)
         )
@@ -220,6 +231,12 @@ private struct GPUSimParams {
     var turbulenceStrength: Float
     var starIgnitionThreshold: Float
     var collapseThreshold: Float
+    var compressionStrength: Float
+    var shockwaveStrength: Float
+    var heatInput: Float
+    var turbulenceInput: Float
+    var radiationInput: Float
+    var coolingBias: Float
     var particleCount: UInt32
     var fieldResolution: UInt32
 }
