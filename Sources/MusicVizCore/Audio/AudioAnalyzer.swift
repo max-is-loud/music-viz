@@ -1,4 +1,3 @@
-import Accelerate
 import Foundation
 
 public struct AudioAnalyzer: Sendable {
@@ -15,20 +14,42 @@ public struct AudioAnalyzer: Sendable {
             return .silence
         }
 
-        var squares = [Float](repeating: 0, count: monoSamples.count)
-        vDSP_vsq(monoSamples, 1, &squares, 1, vDSP_Length(monoSamples.count))
-        var meanSquare: Float = 0
-        vDSP_meanv(squares, 1, &meanSquare, vDSP_Length(squares.count))
+        var totalSquares: Float = 0
+        var bassSquares: Float = 0
+        var midSquares: Float = 0
+        var highSquares: Float = 0
+        var bassCount = 0
+        var midCount = 0
+        var highCount = 0
+
+        let third = max(1, monoSamples.count / 3)
+        for (index, sample) in monoSamples.enumerated() {
+            let finiteSample = sample.isFinite ? sample : 0
+            let square = finiteSample * finiteSample
+            totalSquares += square
+
+            if index < third {
+                bassSquares += square
+                bassCount += 1
+            } else if index < third * 2 {
+                midSquares += square
+                midCount += 1
+            } else {
+                highSquares += square
+                highCount += 1
+            }
+        }
+
+        let meanSquare = totalSquares / Float(monoSamples.count)
         let rms = sqrt(meanSquare)
         let energy = min(rms * 8, 1)
         sustained = sustained * 0.92 + energy * 0.08
         let transient = max(0, energy - previousEnergy) * 3.0
         previousEnergy = energy
 
-        let third = max(1, monoSamples.count / 3)
-        let bass = bandEnergy(samples: monoSamples, start: 0, end: third)
-        let mid = bandEnergy(samples: monoSamples, start: third, end: third * 2)
-        let high = bandEnergy(samples: monoSamples, start: third * 2, end: monoSamples.count)
+        let bass = bandEnergy(squareSum: bassSquares, count: bassCount)
+        let mid = bandEnergy(squareSum: midSquares, count: midCount)
+        let high = bandEnergy(squareSum: highSquares, count: highCount)
         let brightness = min(1, high / max(0.0001, bass + mid + high))
 
         return AudioFeatures(
@@ -44,16 +65,8 @@ public struct AudioAnalyzer: Sendable {
         )
     }
 
-    private func bandEnergy(samples: [Float], start: Int, end: Int) -> Float {
-        let lowerBound = min(max(start, 0), samples.count)
-        let upperBound = min(max(end, lowerBound), samples.count)
-        guard lowerBound < upperBound else { return 0 }
-
-        let bandSamples = Array(samples[lowerBound..<upperBound])
-        var squares = [Float](repeating: 0, count: bandSamples.count)
-        vDSP_vsq(bandSamples, 1, &squares, 1, vDSP_Length(bandSamples.count))
-        var mean: Float = 0
-        vDSP_meanv(squares, 1, &mean, vDSP_Length(squares.count))
-        return sqrt(mean)
+    private func bandEnergy(squareSum: Float, count: Int) -> Float {
+        guard count > 0 else { return 0 }
+        return sqrt(squareSum / Float(count))
     }
 }

@@ -29,4 +29,34 @@ final class AudioAnalyzerTests: XCTestCase {
         XCTAssertFalse(features.isSilent)
         XCTAssertGreaterThan(features.overallEnergy, 0)
     }
+
+    func testNonFiniteSamplesDoNotPoisonLaterAnalysis() {
+        var analyzer = AudioAnalyzer(sampleRate: 48_000)
+        let contaminated = analyzer.analyze([.nan, .infinity, -.infinity])
+
+        assertFinite(contaminated)
+        XCTAssertTrue(contaminated.isSilent)
+
+        let later = analyzer.analyze([1, 0, 0])
+
+        assertFinite(later)
+        XCTAssertFalse(later.isSilent)
+        XCTAssertGreaterThan(later.overallEnergy, 0)
+        XCTAssertGreaterThan(later.transient, 0)
+    }
+
+    private func assertFinite(
+        _ features: AudioFeatures,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(features.overallEnergy.isFinite, file: file, line: line)
+        XCTAssertTrue(features.bass.isFinite, file: file, line: line)
+        XCTAssertTrue(features.lowMid.isFinite, file: file, line: line)
+        XCTAssertTrue(features.mid.isFinite, file: file, line: line)
+        XCTAssertTrue(features.high.isFinite, file: file, line: line)
+        XCTAssertTrue(features.transient.isFinite, file: file, line: line)
+        XCTAssertTrue(features.brightness.isFinite, file: file, line: line)
+        XCTAssertTrue(features.sustainedIntensity.isFinite, file: file, line: line)
+    }
 }
