@@ -18,6 +18,8 @@ app: build
 	cp $(EXECUTABLE) $(APP)/Contents/MacOS/MusicViz
 	cp Resources/AppBundle/Info.plist $(APP)/Contents/Info.plist
 	if [ -d "$(RESOURCE_BUNDLE)" ]; then cp -R "$(RESOURCE_BUNDLE)" "$(APP)/Contents/Resources/"; fi
+	codesign --force --deep --sign - $(APP)
+	codesign --verify --deep --strict --verbose=2 $(APP)
 
 run: app
 	open $(APP)

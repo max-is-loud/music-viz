@@ -2,10 +2,17 @@ import AppKit
 
 @MainActor
 public enum AppLauncher {
+    private static var bootstrapDelegate: BootstrapDelegate?
+
+    static func installBootstrapDelegate(on app: NSApplication) {
+        let delegate = BootstrapDelegate()
+        bootstrapDelegate = delegate
+        app.delegate = delegate
+    }
+
     public static func main() {
         let app = NSApplication.shared
-        let delegate = BootstrapDelegate()
-        app.delegate = delegate
+        installBootstrapDelegate(on: app)
         app.setActivationPolicy(.regular)
         app.activate(ignoringOtherApps: true)
         app.run()
