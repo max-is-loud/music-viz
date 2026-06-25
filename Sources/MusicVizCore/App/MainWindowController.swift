@@ -6,36 +6,18 @@ public final class MainWindowController: NSWindowController {
 
     public init(appState: AppState) {
         self.appState = appState
-        let label = NSTextField(labelWithString: appState.statusText)
-        label.alignment = .center
-        label.textColor = .white
-        label.font = .systemFont(ofSize: 18, weight: .medium)
-
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800))
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor(
-            red: 0.006,
-            green: 0.008,
-            blue: 0.018,
-            alpha: 1
-        ).cgColor
-        label.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: container.centerYAnchor)
-        ])
-
+        let content = MetalCanvasView(appState: appState)
         let window = NSWindow(
-            contentRect: container.frame,
+            contentRect: NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "MusicViz"
-        window.contentView = container
+        window.contentView = content
         window.collectionBehavior = [.fullScreenPrimary, .canJoinAllSpaces]
         window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = false
         super.init(window: window)
     }
 
