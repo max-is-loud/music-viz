@@ -10,6 +10,7 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
     private var fieldState: MetalFieldState
     private let particlePipeline: MTLRenderPipelineState
     private var decayFieldsPipeline: MTLComputePipelineState
+    private var needsFieldClear = true
     private var time: Float = 0
     private var lastDrawTime = Date().timeIntervalSinceReferenceDate
 
@@ -86,6 +87,10 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
             particleCount: UInt32(particleState.count),
             fieldResolution: UInt32(fieldState.resolution)
         )
+
+        if needsFieldClear {
+            needsFieldClear = !fieldState.encodeClear(on: commandBuffer)
+        }
 
         if let compute = commandBuffer.makeComputeCommandEncoder() {
             compute.setComputePipelineState(decayFieldsPipeline)
