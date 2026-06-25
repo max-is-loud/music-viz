@@ -1,0 +1,3 @@
+import MusicVizCore
+
+AppLauncher.main()
