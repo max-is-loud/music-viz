@@ -7,6 +7,7 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private var time: Float = 0
+    private var lastDrawTime = Date().timeIntervalSinceReferenceDate
 
     public init(view: MTKView) throws {
         guard let device = view.device else {
@@ -24,7 +25,10 @@ public final class CosmicRenderer: NSObject, MTKViewDelegate {
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     public func draw(in view: MTKView) {
-        time += 1.0 / Float(max(view.preferredFramesPerSecond, 1))
+        let currentTime = Date().timeIntervalSinceReferenceDate
+        time += Float(currentTime - lastDrawTime)
+        lastDrawTime = currentTime
+
         guard let descriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable,
               let commandBuffer = commandQueue.makeCommandBuffer() else {

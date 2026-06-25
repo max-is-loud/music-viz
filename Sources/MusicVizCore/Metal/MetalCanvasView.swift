@@ -6,25 +6,21 @@ import MetalKit
 public final class MetalCanvasView: MTKView {
     private var cosmicRenderer: CosmicRenderer?
 
-    public init(appState: AppState) {
+    public init(appState: AppState) throws {
         guard let device = MTLCreateSystemDefaultDevice() else {
-            fatalError("MusicViz requires an Apple Silicon Mac with Metal support.")
+            throw RendererError.missingDevice
         }
         super.init(frame: .zero, device: device)
         colorPixelFormat = .bgra8Unorm
-        framebufferOnly = false
+        framebufferOnly = true
         preferredFramesPerSecond = 120
         enableSetNeedsDisplay = false
         isPaused = false
         autoResizeDrawable = true
 
-        do {
-            let renderer = try CosmicRenderer(view: self)
-            self.cosmicRenderer = renderer
-            delegate = renderer
-        } catch {
-            appState.statusText = error.localizedDescription
-        }
+        let renderer = try CosmicRenderer(view: self)
+        self.cosmicRenderer = renderer
+        delegate = renderer
     }
 
     @available(*, unavailable)
